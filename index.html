@@ -8,8 +8,26 @@
 </head>
 <body>
     <canvas id="particleCanvas"></canvas>
-    <h1>互动粒子流星雨</h1>
-    <h2>移动鼠标与星辰互动</h2>
+    
+    <div class="main-content">
+        <h1>互动粒子流星雨</h1>
+        <h2>移动鼠标或在屏幕上滑动，与星辰互动</h2>
+    </div>
+
+    <div id="controls-container">
+        <div class="control-item">
+            <label for="particleCount">星星数量: <span id="particleCountValue"></span></label>
+            <input type="range" id="particleCount" min="50" max="1000" step="10">
+        </div>
+        <div class="control-item">
+            <label for="meteorInterval">流星频率 (值越小越快): <span id="meteorIntervalValue"></span></label>
+            <input type="range" id="meteorInterval" min="50" max="2000" step="50">
+        </div>
+        <div class="control-item">
+            <label for="meteorTrail">流星尾巴长度: <span id="meteorTrailValue"></span></label>
+            <input type="range" id="meteorTrail" min="5" max="100" step="1">
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
