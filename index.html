@@ -1,34 +1,265 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>互动粒子流星雨</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>My Simple Star Page (Touch Friendly)</title>
+  <link rel="preload" as="image" href="IMG_7241.jpeg">
+  <style>
+    :root{
+      --panel-bg: rgba(10,12,16,.62);
+      --panel-blur: blur(10px);
+      --text: #e9f0ff;
+      --accent: #7aa2ff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; overflow:hidden; color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial;
+      background:#000;
+    }
+    /* 背景图片 */
+    body::before{
+      content:""; position:fixed; inset:0; z-index:-2;
+      background-image:url('IMG_7241.jpeg');
+      background-size:cover; background-position:center; background-repeat:no-repeat;
+      filter:brightness(.9) saturate(1.05);
+      transform:translateZ(0);
+    }
+    /* 暗角叠加，突出星星 */
+    body::after{
+      content:""; position:fixed; inset:0; z-index:-1;
+      background: radial-gradient(120% 80% at 50% 30%, rgba(0,0,0,0) 0%, rgba(0,0,0,.35) 60%, rgba(0,0,0,.7) 100%);
+      pointer-events:none;
+    }
+
+    canvas#starfield{position:fixed; inset:0; z-index:0; display:block}
+
+    /* 控件面板（手机可点可拖） */
+    .panel{
+      position:fixed; left:12px; right:12px; bottom:12px; z-index:10;
+      display:grid; gap:10px;
+      background:var(--panel-bg); -webkit-backdrop-filter:var(--panel-blur); backdrop-filter:var(--panel-blur);
+      border:1px solid rgba(255,255,255,.1); border-radius:16px; padding:12px;
+    }
+    .row{display:grid; grid-template-columns:140px 1fr 64px; gap:10px; align-items:center}
+    .row label{font-size:14px; opacity:.9}
+    input[type="range"]{
+      width:100%; height:44px; /* 触控目标尺寸 */
+      -webkit-appearance:none; background:transparent;
+      touch-action: pan-x; /* 允许横向拖动 */
+    }
+    input[type="range"]::-webkit-slider-runnable-track{
+      height:6px; background:rgba(255,255,255,.35); border-radius:999px
+    }
+    input[type="range"]::-webkit-slider-thumb{
+      -webkit-appearance:none; width:28px; height:28px; margin-top:-11px;
+      background:var(--accent); border-radius:50%; border:2px solid rgba(255,255,255,.9);
+      box-shadow:0 2px 8px rgba(0,0,0,.4)
+    }
+    input[type="number"]{
+      width:100%; height:44px; padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.2);
+      background:rgba(20,22,30,.5); color:var(--text);
+    }
+    .controls-head{
+      display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+      padding-bottom:4px; border-bottom:1px dashed rgba(255,255,255,.15); margin-bottom:2px;
+    }
+    .title{font-weight:600; letter-spacing:.2px}
+    .btn{
+      height:44px; padding:0 14px; border-radius:12px; border:1px solid rgba(255,255,255,.2);
+      background:rgba(30,34,48,.6); color:var(--text); cursor:pointer; font-weight:600;
+      touch-action: manipulation;
+    }
+    .btn:active{transform:translateY(1px)}
+    /* 防止 Canvas 抢事件，面板上方交互优先 */
+    .panel{pointer-events:auto}
+    /* 避免全局禁用手势；仅在 Canvas 内部处理指针 */
+  </style>
 </head>
 <body>
-    <canvas id="particleCanvas"></canvas>
-    
-    <div class="main-content">
-        <h1>互动粒子流星雨</h1>
-        <h2>移动鼠标或在屏幕上滑动，与星辰互动</h2>
+  <canvas id="starfield"></canvas>
+
+  <div id="controls" class="panel" role="region" aria-label="星空参数调节">
+    <div class="controls-head">
+      <div class="title">⭐ 星空调节（支持触屏）</div>
+      <button class="btn" id="resetBtn">重置</button>
     </div>
 
-    <div id="controls-container">
-        <div class="control-item">
-            <label for="particleCount">星星数量: <span id="particleCountValue"></span></label>
-            <input type="range" id="particleCount" min="50" max="1000" step="10">
-        </div>
-        <div class="control-item">
-            <label for="meteorInterval">流星频率 (值越小越快): <span id="meteorIntervalValue"></span></label>
-            <input type="range" id="meteorInterval" min="50" max="2000" step="50">
-        </div>
-        <div class="control-item">
-            <label for="meteorTrail">流星尾巴长度: <span id="meteorTrailValue"></span></label>
-            <input type="range" id="meteorTrail" min="5" max="100" step="1">
-        </div>
+    <div class="row">
+      <label for="count">星星数量</label>
+      <input id="count" type="range" min="100" max="4000" step="50" value="1200" />
+      <input id="countNum" type="number" min="100" max="4000" step="50" value="1200" />
     </div>
 
-    <script src="script.js"></script>
+    <div class="row">
+      <label for="size">星点大小</label>
+      <input id="size" type="range" min="0.5" max="3" step="0.1" value="1.4" />
+      <input id="sizeNum" type="number" min="0.5" max="3" step="0.1" value="1.4" />
+    </div>
+
+    <div class="row">
+      <label for="speed">漂移速度</label>
+      <input id="speed" type="range" min="0" max="1" step="0.01" value="0.15" />
+      <input id="speedNum" type="number" min="0" max="1" step="0.01" value="0.15" />
+    </div>
+
+    <div class="row">
+      <label for="twinkle">闪烁强度</label>
+      <input id="twinkle" type="range" min="0" max="1" step="0.01" value="0.5" />
+      <input id="twinkleNum" type="number" min="0" max="1" step="0.01" value="0.5" />
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById('starfield');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    let DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2)); // 控制上限以省电
+    let W=0, H=0;
+
+    function resize(){
+      DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+      W = Math.floor(window.innerWidth  * DPR);
+      H = Math.floor(window.innerHeight * DPR);
+      canvas.width = W; canvas.height = H;
+      canvas.style.width  = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+    }
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
+
+    // 参数（双向绑定到控件）
+    const els = {
+      count: document.getElementById('count'),
+      countNum: document.getElementById('countNum'),
+      size: document.getElementById('size'),
+      sizeNum: document.getElementById('sizeNum'),
+      speed: document.getElementById('speed'),
+      speedNum: document.getElementById('speedNum'),
+      twinkle: document.getElementById('twinkle'),
+      twinkleNum: document.getElementById('twinkleNum'),
+      reset: document.getElementById('resetBtn'),
+      panel: document.getElementById('controls'),
+    };
+
+    const params = {
+      count: +els.count.value,
+      size: +els.size.value,
+      speed: +els.speed.value,
+      twinkle: +els.twinkle.value,
+    };
+
+    // 触屏关键：用 input 事件，且不要全局 preventDefault
+    function link(a, b, key, formatter = v => v){
+      const apply = (v) => { params[key] = formatter(+v); a.value = v; b.value = v; if(key==='count') syncStarCount(); };
+      a.addEventListener('input', e => apply(e.target.value), { passive: true });
+      b.addEventListener('input', e => apply(e.target.value), { passive: true });
+    }
+    link(els.count, els.countNum, 'count', v => Math.max(100, Math.min(4000, v)));
+    link(els.size, els.sizeNum, 'size', v => Math.max(0.5, Math.min(3, v)));
+    link(els.speed, els.speedNum, 'speed', v => Math.max(0, Math.min(1, v)));
+    link(els.twinkle, els.twinkleNum, 'twinkle', v => Math.max(0, Math.min(1, v)));
+
+    els.reset.addEventListener('click', () => {
+      [['count',1200],['size',1.4],['speed',0.15],['twinkle',0.5]].forEach(([k,v])=>{
+        params[k]=v; els[k].value=v; els[k+'Num'].value=v;
+      });
+      syncStarCount();
+    });
+
+    // 防止面板上的触摸冒泡到画布（但不阻止默认行为，滑块仍可拖动）
+    ['pointerdown','pointerup','touchstart','touchend'].forEach(t=>{
+      els.panel.addEventListener(t, e => e.stopPropagation(), { passive:true });
+    });
+
+    // 星星数据
+    const stars = [];
+    function makeStar(){
+      // 随机分布 + 轻微漂移
+      return {
+        x: Math.random()*W,
+        y: Math.random()*H,
+        r: (Math.random()*0.6 + 0.7) * params.size * DPR,
+        // 色温偏蓝白
+        hue: 200 + Math.random()*40,
+        tw: Math.random()*Math.PI*2,
+        twSpeed: (0.5 + Math.random()) * 0.002,
+        vx: (Math.random()-0.5) * params.speed * DPR,
+        vy: (Math.random()-0.5) * params.speed * DPR,
+      };
+    }
+    function syncStarCount(){
+      const target = params.count | 0;
+      if(stars.length < target){
+        for(let i=stars.length; i<target; i++) stars.push(makeStar());
+      }else{
+        stars.length = target;
+      }
+    }
+    syncStarCount();
+
+    // 绘制发光点
+    function drawStar(s){
+      const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r*2.2);
+      const a = 0.75 + Math.sin(s.tw)*0.25 * params.twinkle;
+      const col = `hsla(${s.hue}, 100%, 88%, `;
+      g.addColorStop(0.0, col + (0.95*a) + ')');
+      g.addColorStop(0.4, col + (0.65*a) + ')');
+      g.addColorStop(1.0, col + '0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r*2.2, 0, Math.PI*2); ctx.fill();
+    }
+
+    // 动画
+    let lastT = performance.now();
+    function tick(now){
+      const dt = Math.min(50, now-lastT); lastT = now;
+
+      // 轻薄清屏，保留少许拖影
+      ctx.clearRect(0,0,W,H);
+
+      for(let i=0;i<stars.length;i++){
+        const s = stars[i];
+        // 更新
+        s.tw += s.twSpeed * dt;
+        // 根据当前速度参数更新位移（低开销）
+        const speedScale = params.speed * 0.12 * dt;
+        s.x += (s.vx || 0) * speedScale;
+        s.y += (s.vy || 0) * speedScale;
+
+        // 越界循环
+        if(s.x < -5) s.x = W+5; else if(s.x > W+5) s.x = -5;
+        if(s.y < -5) s.y = H+5; else if(s.y > H+5) s.y = -5;
+
+        // 半随机改变速度，让画面更灵动
+        if(Math.random()<0.002){
+          s.vx = (Math.random()-0.5);
+          s.vy = (Math.random()-0.5);
+        }
+
+        drawStar(s);
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    // 仅在画布上处理指针（不影响面板触控）
+    let dragging = false, lastPX=0, lastPY=0;
+    canvas.addEventListener('pointerdown', (e)=>{
+      dragging = true; lastPX = e.clientX; lastPY = e.clientY; canvas.setPointerCapture(e.pointerId);
+    }, { passive: true });
+    canvas.addEventListener('pointermove', (e)=>{
+      if(!dragging) return;
+      const dx = (e.clientX - lastPX) * 0.002, dy = (e.clientY - lastPY) * 0.002;
+      lastPX = e.clientX; lastPY = e.clientY;
+      // 拖拽时给星星一个整体漂移方向
+      for(let i=0;i<stars.length;i++){
+        stars[i].vx += dx; stars[i].vy += dy;
+      }
+    }, { passive: true });
+    canvas.addEventListener('pointerup', ()=>{ dragging=false; }, { passive: true });
+  })();
+  </script>
 </body>
 </html>
