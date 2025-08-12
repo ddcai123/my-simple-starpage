@@ -1,224 +1,173 @@
-const canvas = document.getElementById('particleCanvas');
-const ctx = canvas.getContext('2d');
+// script.js  ——  移动端触屏友好的星空交互
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('starfield');
+  const ctx = canvas.getContext('2d', { alpha: true });
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+  // 高分屏支持：限制到 2x 以省电
+  let DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  let W = 0, H = 0;
 
-// --- 获取控制元素 ---
-const particleCountSlider = document.getElementById('particleCount');
-const particleCountValue = document.getElementById('particleCountValue');
-const meteorIntervalSlider = document.getElementById('meteorInterval');
-const meteorIntervalValue = document.getElementById('meteorIntervalValue');
-const meteorTrailSlider = document.getElementById('meteorTrail');
-const meteorTrailValue = document.getElementById('meteorTrailValue');
+  function resize() {
+    DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    W = Math.floor(window.innerWidth * DPR);
+    H = Math.floor(window.innerHeight * DPR);
+    canvas.width = W;
+    canvas.height = H;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+  }
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
 
+  // --- 控件 & 参数 ---
+  const els = {
+    count: document.getElementById('count'),
+    countNum: document.getElementById('countNum'),
+    size: document.getElementById('size'),
+    sizeNum: document.getElementById('sizeNum'),
+    speed: document.getElementById('speed'),
+    speedNum: document.getElementById('speedNum'),
+    twinkle: document.getElementById('twinkle'),
+    twinkleNum: document.getElementById('twinkleNum'),
+    reset: document.getElementById('resetBtn'),
+    panel: document.getElementById('controls'),
+  };
 
-// --- 配置项 (现在是默认值) ---
-const CONFIG = {
-    particleCount: 200,
-    interactionRadius: 150,
-    meteorInterval: 200,
-    meteorTrailLength: 25,
-};
+  const params = {
+    count: +els.count.value || 1200,
+    size: +els.size.value || 1.4,
+    speed: +els.speed.value || 0.15,
+    twinkle: +els.twinkle.value || 0.5,
+  };
 
-// --- 鼠标和触摸位置 ---
-const pointer = {
-    x: null,
-    y: null,
-    radius: CONFIG.interactionRadius
-};
+  // 将两个控件（range/number）与同一参数联动
+  function link(a, b, key, clamp) {
+    const apply = (v) => {
+      v = clamp(+v);
+      params[key] = v;
+      a.value = v;
+      b.value = v;
+      if (key === 'count') syncStarCount();
+    };
+    a.addEventListener('input', (e) => apply(e.target.value), { passive: true });
+    b.addEventListener('input', (e) => apply(e.target.value), { passive: true });
+  }
 
-// --- 事件监听 ---
-// 鼠标
-window.addEventListener('mousemove', event => {
-    pointer.x = event.x;
-    pointer.y = event.y;
-});
-window.addEventListener('mouseout', () => {
-    pointer.x = null;
-    pointer.y = null;
-});
+  link(els.count, els.countNum, 'count', v => Math.max(100, Math.min(4000, v|0)));
+  link(els.size, els.sizeNum, 'size', v => Math.max(0.5, Math.min(3, v)));
+  link(els.speed, els.speedNum, 'speed', v => Math.max(0, Math.min(1, v)));
+  link(els.twinkle, els.twinkleNum, 'twinkle', v => Math.max(0, Math.min(1, v)));
 
-// 触摸 (移动端)
-window.addEventListener('touchstart', event => {
-    pointer.x = event.touches[0].clientX;
-    pointer.y = event.touches[0].clientY;
-}, { passive: false });
-window.addEventListener('touchmove', event => {
-    event.preventDefault(); // 防止页面滚动
-    pointer.x = event.touches[0].clientX;
-    pointer.y = event.touches[0].clientY;
-}, { passive: false });
-window.addEventListener('touchend', () => {
-    pointer.x = null;
-    pointer.y = null;
-});
-
-
-let particlesArray = [];
-let meteorsArray = [];
-let meteorGenerator; // 用于存储 setInterval 的 ID
-
-// --- 粒子类 (与之前相同，但互动对象改为 pointer) ---
-class Particle {
-    constructor(x, y, size, color) {
-        this.x = x;
-        this.y = y;
-        this.size = size;
-        this.color = color;
-        this.baseX = this.x;
-        this.baseY = this.y;
-        this.density = (Math.random() * 30) + 1;
-    }
-
-    draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-    }
-
-    update() {
-        let dx = pointer.x - this.x;
-        let dy = pointer.y - this.y;
-        let distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < pointer.radius) {
-            const forceDirectionX = dx / distance;
-            const forceDirectionY = dy / distance;
-            const force = (pointer.radius - distance) / pointer.radius;
-            const directionX = forceDirectionX * force * this.density * 0.5;
-            const directionY = forceDirectionY * force * this.density * 0.5;
-            this.x -= directionX;
-            this.y -= directionY;
-        } else {
-            if (this.x !== this.baseX) {
-                this.x -= (this.x - this.baseX) / 20;
-            }
-            if (this.y !== this.baseY) {
-                this.y -= (this.y - this.baseY) / 20;
-            }
-        }
-        this.draw();
-    }
-}
-
-// --- 流星类 (现在尾巴长度是动态的) ---
-class Meteor {
-    constructor() { this.reset(); }
-    reset() {
-        this.x = Math.random() * canvas.width + 100;
-        this.y = -100;
-        this.size = Math.random() * 2 + 1;
-        this.speed = Math.random() * 5 + 5;
-        this.trail = [];
-    }
-    draw() {
-        ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-        for (let i = 0; i < this.trail.length; i++) {
-            const pos = this.trail[i];
-            const opacity = 1 - (i / this.trail.length);
-            ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.5})`;
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, this.size * ((this.trail.length - i) / this.trail.length), 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-    update() {
-        this.x -= this.speed;
-        this.y += this.speed / 2;
-        this.trail.push({ x: this.x, y: this.y });
-        // 使用 CONFIG 中的尾巴长度
-        if (this.trail.length > CONFIG.meteorTrailLength) {
-            this.trail.shift();
-        }
-        if (this.x < -100 || this.y > canvas.height + 100) {
-            this.reset();
-        }
-        this.draw();
-    }
-}
-
-// --- 初始化函数 (只负责创建星星) ---
-function init_particles() {
-    particlesArray = [];
-    for (let i = 0; i < CONFIG.particleCount; i++) {
-        let size = Math.random() * 1.5 + 0.5;
-        let x = Math.random() * canvas.width;
-        let y = Math.random() * canvas.height;
-        let color = `rgba(255, 255, 255, ${Math.random() * 0.5 + 0.2})`;
-        particlesArray.push(new Particle(x, y, size, color));
-    }
-}
-
-// --- 动画循环 ---
-function animate() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    particlesArray.forEach(p => p.update());
-    meteorsArray.forEach(m => m.update());
-    requestAnimationFrame(animate);
-}
-
-// --- 控制器设置 ---
-function setupControls() {
-    // 设置初始值
-    particleCountSlider.value = CONFIG.particleCount;
-    particleCountValue.textContent = CONFIG.particleCount;
-    meteorIntervalSlider.value = CONFIG.meteorInterval;
-    meteorIntervalValue.textContent = CONFIG.meteorInterval + 'ms';
-    meteorTrailSlider.value = CONFIG.meteorTrailLength;
-    meteorTrailValue.textContent = CONFIG.meteorTrailLength;
-
-    // 监听星星数量滑块
-    particleCountSlider.addEventListener('input', (e) => {
-        CONFIG.particleCount = parseInt(e.target.value);
-        particleCountValue.textContent = e.target.value;
-        init_particles(); // 重新生成星星
+  els.reset.addEventListener('click', () => {
+    [['count',1200],['size',1.4],['speed',0.15],['twinkle',0.5]].forEach(([k,v])=>{
+      params[k]=v; els[k].value=v; els[k+'Num'].value=v;
     });
+    syncStarCount();
+  });
 
-    // 监听流星频率滑块
-    meteorIntervalSlider.addEventListener('input', (e) => {
-        CONFIG.meteorInterval = parseInt(e.target.value);
-        meteorIntervalValue.textContent = e.target.value + 'ms';
-        // 清除旧的定时器并设置新的
-        clearInterval(meteorGenerator);
-        startMeteorShower();
-    });
+  // 重要：面板上允许默认浏览器行为（滑块拖动），只阻止事件冒泡到 canvas
+  ['pointerdown','pointerup','touchstart','touchend'].forEach(t=>{
+    els.panel?.addEventListener(t, e => e.stopPropagation(), { passive:true });
+  });
 
-    // 监听流星尾巴长度滑块
-    meteorTrailSlider.addEventListener('input', (e) => {
-        CONFIG.meteorTrailLength = parseInt(e.target.value);
-        meteorTrailValue.textContent = e.target.value;
-    });
-}
+  // --- 星空数据 ---
+  const stars = [];
 
-// --- 启动流星雨 ---
-function startMeteorShower() {
-    // 先清空，防止意外创建多个流星
-    meteorsArray = [];
-    // 每隔一段时间创建一个流星
-    meteorGenerator = setInterval(() => {
-        if (meteorsArray.length < 10) { // 最多同时存在10颗流星
-            meteorsArray.push(new Meteor());
-        }
-    }, CONFIG.meteorInterval);
-}
+  function makeStar() {
+    return {
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: (Math.random()*0.6 + 0.7) * params.size * DPR,
+      hue: 200 + Math.random()*40, // 偏蓝白
+      tw: Math.random() * Math.PI * 2,
+      twSpeed: (0.5 + Math.random()) * 0.002,
+      vx: (Math.random() - 0.5),
+      vy: (Math.random() - 0.5),
+    };
+  }
 
+  function syncStarCount() {
+    const target = params.count | 0;
+    if (stars.length < target) {
+      for (let i = stars.length; i < target; i++) stars.push(makeStar());
+    } else if (stars.length > target) {
+      stars.length = target;
+    }
+  }
+  syncStarCount();
 
-// --- 主程序启动 ---
-setupControls();
-init_particles();
-startMeteorShower();
-animate();
+  function drawStar(s) {
+    const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 2.2);
+    const a = 0.75 + Math.sin(s.tw) * 0.25 * params.twinkle;
+    const col = `hsla(${s.hue}, 100%, 88%, `;
+    g.addColorStop(0.0, col + (0.95 * a) + ')');
+    g.addColorStop(0.4, col + (0.65 * a) + ')');
+    g.addColorStop(1.0, col + '0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-// 监听窗口大小变化
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    pointer.radius = CONFIG.interactionRadius;
-    init_particles();
+  // --- 动画 ---
+  let lastT = performance.now();
+  function tick(now) {
+    const dt = Math.min(50, now - lastT); // 限制最大步长
+    lastT = now;
+
+    // 轻薄清屏；若想更强拖影，可改成：ctx.globalAlpha=0.88; 填充一层黑色再还原
+    ctx.clearRect(0, 0, W, H);
+
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+
+      // twinkle
+      s.tw += s.twSpeed * dt;
+
+      // 位移（速度随参数缩放）
+      const speedScale = params.speed * 0.12 * dt;
+      s.x += (s.vx || 0) * speedScale;
+      s.y += (s.vy || 0) * speedScale;
+
+      // 越界循环
+      if (s.x < -5) s.x = W + 5; else if (s.x > W + 5) s.x = -5;
+      if (s.y < -5) s.y = H + 5; else if (s.y > H + 5) s.y = -5;
+
+      // 偶尔改变方向，让画面灵动
+      if (Math.random() < 0.002) {
+        s.vx = (Math.random() - 0.5);
+        s.vy = (Math.random() - 0.5);
+      }
+
+      drawStar(s);
+    }
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // --- 交互：在画布上拖动以改变整体漂移方向 ---
+  let dragging = false, lastPX = 0, lastPY = 0;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    lastPX = e.clientX; lastPY = e.clientY;
+    // 捕获指针，手指/鼠标可离开画布继续跟踪
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  }, { passive: true });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = (e.clientX - lastPX) * 0.002;
+    const dy = (e.clientY - lastPY) * 0.002;
+    lastPX = e.clientX; lastPY = e.clientY;
+
+    for (let i = 0; i < stars.length; i++) {
+      stars[i].vx += dx;
+      stars[i].vy += dy;
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('pointerup', () => { dragging = false; }, { passive: true });
+
 });
